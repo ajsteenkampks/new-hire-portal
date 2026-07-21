@@ -16,7 +16,8 @@ export default function LoginPage() {
         callbackURL: "/",
       })
       if (result?.error) {
-        setError(result.error.message || "Sign-in failed. Check your Vercel environment variables.")
+        const msg = result.error.message || result.error.code || JSON.stringify(result.error)
+        setError(`Sign-in failed: ${msg}`)
         setLoading(false)
       }
       // On success the browser redirects — loading state stays until navigation
