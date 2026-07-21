@@ -5,13 +5,25 @@ import { authClient } from "@/lib/auth-client"
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
 
   const handleSignIn = async () => {
     setLoading(true)
-    await authClient.signIn.social({
-      provider: "microsoft",
-      callbackURL: "/",
-    })
+    setError("")
+    try {
+      const result = await authClient.signIn.social({
+        provider: "microsoft",
+        callbackURL: "/",
+      })
+      if (result?.error) {
+        setError(result.error.message || "Sign-in failed. Check your Vercel environment variables.")
+        setLoading(false)
+      }
+      // On success the browser redirects — loading state stays until navigation
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign-in failed. Please try again.")
+      setLoading(false)
+    }
   }
 
   return (
@@ -30,6 +42,11 @@ export default function LoginPage() {
           <MicrosoftLogo />
           {loading ? "Signing in…" : "Sign in with Microsoft"}
         </button>
+        {error && (
+          <p className="mt-4 text-red-400 text-xs bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   )
