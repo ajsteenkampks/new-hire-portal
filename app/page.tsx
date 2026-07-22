@@ -13,6 +13,7 @@ interface FormState {
 interface Result {
   email: string
   password: string
+  license: string
 }
 
 interface ParsedTicket {
@@ -21,6 +22,7 @@ interface ParsedTicket {
   jobTitle: string
   department: string
   needsEmail: boolean
+  isVariableStatus: boolean
 }
 
 function parseTicket(raw: string): ParsedTicket {
@@ -49,7 +51,7 @@ function parseTicket(raw: string): ParsedTicket {
   if (itIdx !== -1) {
     for (let i = itIdx + 1; i < lines.length; i++) {
       if (!lines[i]) continue
-      if (lines[i].endsWith(":")) break // next label = end of IT Requests
+      if (lines[i].endsWith(":")) break
       if (lines[i].toLowerCase() === "email address") {
         needsEmail = true
         break
@@ -57,13 +59,25 @@ function parseTicket(raw: string): ParsedTicket {
     }
   }
 
-  return { firstName, lastName, jobTitle, department, needsEmail }
+  // Detect variable vs regular status
+  const statusIdx = lines.findIndex((l) => l.toLowerCase().includes("variable or regular"))
+  let isVariableStatus = false
+  if (statusIdx !== -1) {
+    for (let i = statusIdx + 1; i < lines.length; i++) {
+      if (!lines[i]) continue
+      isVariableStatus = lines[i].toLowerCase().includes("variable")
+      break
+    }
+  }
+
+  return { firstName, lastName, jobTitle, department, needsEmail, isVariableStatus }
 }
 
 export default function Home() {
   const [mode, setMode] = useState<"paste" | "manual">("paste")
   const [ticketText, setTicketText] = useState("")
   const [parsed, setParsed] = useState<ParsedTicket | null>(null)
+  const [isVariableStatus, setIsVariableStatus] = useState(false)
   const [form, setForm] = useState<FormState>({
     firstName: "",
     lastName: "",
@@ -89,6 +103,7 @@ export default function Home() {
     setParsed(p)
     if (p.needsEmail) {
       setForm({ firstName: p.firstName, lastName: p.lastName, jobTitle: p.jobTitle, department: p.department })
+      setIsVariableStatus(p.isVariableStatus)
     }
   }
 
@@ -102,11 +117,11 @@ export default function Home() {
       const res = await fetch("/api/create-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(activeForm),
+        body: JSON.stringify({ ...activeForm, isVariableStatus }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Failed to create account")
-      setResult({ email: data.email, password: data.password })
+      setResult({ email: data.email, password: data.password, license: data.license || "" })
       setForm({ firstName: "", lastName: "", jobTitle: "", department: "" })
       setParsed(null)
       setTicketText("")
@@ -173,6 +188,10 @@ export default function Home() {
                     {copied === "password" ? "✓" : "Copy"}
                   </button>
                 </div>
+              </div>
+              <div>
+                <p className="text-zinc-500 text-xs mb-1.5">License assigned</p>
+                <p className="text-zinc-300 text-sm bg-zinc-800 px-3 py-2 rounded-lg">{result.license}</p>
               </div>
               <p className="text-zinc-600 text-xs">User must change their password on first sign-in.</p>
             </div>
@@ -247,13 +266,18 @@ export default function Home() {
               </div>
             ) : (
               <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-5 h-5 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
-                    <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
+                      <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <span className="text-green-400 text-sm font-medium">Email address required</span>
                   </div>
-                  <span className="text-green-400 text-sm font-medium">Email address required</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${isVariableStatus ? "bg-amber-500/15 text-amber-400" : "bg-blue-500/15 text-blue-400"}`}>
+                    {isVariableStatus ? "F3 License" : "Business Premium"}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 text-sm">

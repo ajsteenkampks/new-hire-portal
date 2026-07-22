@@ -1,6 +1,9 @@
 const DOMAIN = "resurrection.church"
 export const TEMP_PASSWORD = "Resurrection123"
 
+const F3_PART_NUMBERS = ["SPE_F1", "SPE_F3", "DESKLESSPACK", "Microsoft_365_F3"]
+const BUSINESS_PREMIUM_PART_NUMBERS = ["SPB", "Microsoft_365_Business_Premium", "O365_BUSINESS_PREMIUM"]
+
 async function getAccessToken(): Promise<string> {
   const res = await fetch(
     `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID}/oauth2/v2.0/token`,
@@ -23,9 +26,46 @@ async function getAccessToken(): Promise<string> {
 }
 
 function buildUpn(firstName: string, lastName: string) {
-  const clean = (s: string) =>
-    s.toLowerCase().replace(/[^a-z0-9]/g, "")
+  const clean = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "")
   return `${clean(firstName)}.${clean(lastName)}@${DOMAIN}`
+}
+
+async function findLicenseSku(
+  token: string,
+  type: "f3" | "businessPremium"
+): Promise<{ skuId: string; skuPartNumber: string } | null> {
+  const res = await fetch("https://graph.microsoft.com/v1.0/subscribedSkus", {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!res.ok) throw new Error("Could not fetch subscribed licenses from tenant")
+  const data = await res.json()
+  const skus: Array<{ skuId: string; skuPartNumber: string; prepaidUnits: { enabled: number } }> =
+    data.value || []
+
+  const partNumbers = type === "f3" ? F3_PART_NUMBERS : BUSINESS_PREMIUM_PART_NUMBERS
+  for (const partNumber of partNumbers) {
+    const sku = skus.find((s) => s.skuPartNumber === partNumber)
+    if (sku) return { skuId: sku.skuId, skuPartNumber: sku.skuPartNumber }
+  }
+  return null
+}
+
+async function assignLicense(token: string, userId: string, skuId: string): Promise<void> {
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${userId}/assignLicense`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      addLicenses: [{ skuId, disabledPlans: [] }],
+      removeLicenses: [],
+    }),
+  })
+  if (!res.ok) {
+    const err = await res.json()
+    throw new Error(err.error?.message || "Failed to assign license")
+  }
 }
 
 export async function createADUser(params: {
@@ -33,11 +73,12 @@ export async function createADUser(params: {
   lastName: string
   jobTitle: string
   department: string
-}): Promise<{ upn: string; objectId: string }> {
+  isVariableStatus: boolean
+}): Promise<{ upn: string; objectId: string; license: string }> {
   const token = await getAccessToken()
   const upn = buildUpn(params.firstName, params.lastName)
 
-  // Check if the user already exists
+  // Check if user already exists
   const check = await fetch(
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(upn)}`,
     { headers: { Authorization: `Bearer ${token}` } }
@@ -46,6 +87,7 @@ export async function createADUser(params: {
     throw new Error(`${upn} already exists in Azure AD`)
   }
 
+  // Create user
   const res = await fetch("https://graph.microsoft.com/v1.0/users", {
     method: "POST",
     headers: {
@@ -57,7 +99,7 @@ export async function createADUser(params: {
       givenName: params.firstName,
       surname: params.lastName,
       userPrincipalName: upn,
-      mailNickname: `${buildUpn(params.firstName, params.lastName).split("@")[0]}`,
+      mailNickname: buildUpn(params.firstName, params.lastName).split("@")[0],
       jobTitle: params.jobTitle || undefined,
       department: params.department || undefined,
       usageLocation: "US",
@@ -75,5 +117,18 @@ export async function createADUser(params: {
   }
 
   const user = await res.json()
-  return { upn, objectId: user.id }
+
+  // Assign license
+  const licenseType = params.isVariableStatus ? "f3" : "businessPremium"
+  const licenseLabel = params.isVariableStatus ? "Microsoft 365 F3" : "Microsoft 365 Business Premium"
+  const sku = await findLicenseSku(token, licenseType)
+
+  if (!sku) {
+    // User was created but license not found — don't fail the whole operation
+    return { upn, objectId: user.id, license: `${licenseLabel} (not found in tenant — assign manually)` }
+  }
+
+  await assignLicense(token, user.id, sku.skuId)
+
+  return { upn, objectId: user.id, license: licenseLabel }
 }

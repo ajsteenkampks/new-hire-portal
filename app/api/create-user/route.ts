@@ -10,21 +10,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  let body: { firstName?: string; lastName?: string; jobTitle?: string; department?: string }
+  let body: {
+    firstName?: string
+    lastName?: string
+    jobTitle?: string
+    department?: string
+    isVariableStatus?: boolean
+  }
   try {
     body = await request.json()
   } catch {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
   }
 
-  const { firstName, lastName, jobTitle = "", department = "" } = body
+  const { firstName, lastName, jobTitle = "", department = "", isVariableStatus = false } = body
   if (!firstName?.trim() || !lastName?.trim()) {
     return NextResponse.json({ error: "First and last name are required" }, { status: 400 })
   }
 
   try {
     await ensureSchema()
-    const { upn, objectId } = await createADUser({ firstName: firstName.trim(), lastName: lastName.trim(), jobTitle, department })
+    const { upn, objectId, license } = await createADUser({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      jobTitle,
+      department,
+      isVariableStatus,
+    })
     await logHire({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -34,7 +46,7 @@ export async function POST(request: Request) {
       azureObjectId: objectId,
       createdBy: session.user.email || session.user.name || "unknown",
     })
-    return NextResponse.json({ email: upn, password: TEMP_PASSWORD, objectId })
+    return NextResponse.json({ email: upn, password: TEMP_PASSWORD, license, objectId })
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error"
     return NextResponse.json({ error: message }, { status: 400 })
