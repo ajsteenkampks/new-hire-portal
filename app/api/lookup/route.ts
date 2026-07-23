@@ -20,8 +20,8 @@ export async function POST(request: Request) {
   if (names.length === 0) {
     return NextResponse.json({ error: "No names provided" }, { status: 400 })
   }
-  if (names.length > 50) {
-    return NextResponse.json({ error: "Maximum 50 names per lookup" }, { status: 400 })
+  if (names.length > 163) {
+    return NextResponse.json({ error: "Maximum 163 names per lookup" }, { status: 400 })
   }
 
   try {
