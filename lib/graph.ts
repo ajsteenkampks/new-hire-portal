@@ -68,6 +68,46 @@ async function assignLicense(token: string, userId: string, skuId: string): Prom
   }
 }
 
+export interface UserMatch {
+  displayName: string
+  userPrincipalName: string
+  accountEnabled: boolean
+  jobTitle: string | null
+  department: string | null
+}
+
+export interface LookupResult {
+  searched: string
+  matches: UserMatch[]
+}
+
+export async function searchUsers(names: string[]): Promise<LookupResult[]> {
+  const token = await getAccessToken()
+  return Promise.all(
+    names.map(async (name): Promise<LookupResult> => {
+      const trimmed = name.trim()
+      if (!trimmed) return { searched: trimmed, matches: [] }
+
+      const url =
+        `https://graph.microsoft.com/v1.0/users` +
+        `?$search="displayName:${encodeURIComponent(trimmed)}"` +
+        `&$select=displayName,userPrincipalName,accountEnabled,jobTitle,department` +
+        `&$top=5`
+
+      const res = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          ConsistencyLevel: "eventual",
+        },
+      })
+
+      if (!res.ok) return { searched: trimmed, matches: [] }
+      const data = await res.json()
+      return { searched: trimmed, matches: data.value || [] }
+    })
+  )
+}
+
 export async function createADUser(params: {
   firstName: string
   lastName: string

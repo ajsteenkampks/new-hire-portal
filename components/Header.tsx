@@ -42,6 +42,16 @@ export default function Header() {
             >
               History
             </Link>
+            <Link
+              href="/lookup"
+              className={`text-sm px-3 py-1.5 rounded-md transition-colors ${
+                pathname === "/lookup"
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+              }`}
+            >
+              User Lookup
+            </Link>
           </nav>
         </div>
         <div className="flex items-center gap-4">
